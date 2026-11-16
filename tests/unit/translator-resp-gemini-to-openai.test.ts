@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { translateResponse } from "../../open-sse/translator/index.ts";
+import { initTranslateStreamState } from "../../open-sse/utils/streamTranslateState.ts";
 
 const { geminiToOpenAIResponse } =
   await import("../../open-sse/translator/response/gemini-to-openai.ts");
@@ -1451,4 +1453,35 @@ test("Gemini stream: partial textual tool call survives a reasoning-only chunk",
     .tool_calls[0];
   assert.ok(toolCall, "the textual tool call resolves after the reasoning-only interruption");
   assert.equal(toolCall.function.name, "terminal");
+});
+
+test("Antigravity -> OpenAI Responses: functionCall does not duplicate state.toolCalls entry", () => {
+  const state = initTranslateStreamState(
+    FORMATS.OPENAI_RESPONSES,
+    null,
+    "gemini-4-hydrogen-medium"
+  );
+  translateResponse(
+    FORMATS.ANTIGRAVITY,
+    FORMATS.OPENAI_RESPONSES,
+    {
+      response: {
+        candidates: [
+          {
+            content: {
+              parts: [
+                { thought: true, text: "thinking" },
+                { functionCall: { name: "read", args: { path: "/tmp/x" } } },
+              ],
+            },
+            finishReason: "STOP",
+          },
+        ],
+        usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5, totalTokenCount: 15 },
+      },
+    },
+    state
+  );
+  assert.equal(state.toolCalls.size, 1);
+  assert.deepEqual([...state.toolCalls.keys()], [0]);
 });
